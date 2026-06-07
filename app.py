@@ -97,7 +97,7 @@ def load_and_preprocess_data_full():
 raw_df, df_processed, df_clean, df_original_five_raw, missing_before, initial_rows, missing_after_initial, rows_after_initial_drop = load_and_preprocess_data_full()
 
 # Load models
-rf_model = pickle.load(open('model_rf.pkl', 'rb'))
+rf_model = pickle.load(open('model_rf (1).pkl', 'rb'))
 nb_model = pickle.load(open('model_nb.pkl', 'rb'))
 reg_model = pickle.load(open('model_reg.pkl', 'rb'))
 reg_scaler_loaded = pickle.load(open('reg_scaler.pkl', 'rb'))
