@@ -280,22 +280,37 @@ elif menu == "Eksplorasi Data & Visualisasi":
         st.info("Meskipun Silhouette Score tertinggi berada pada K tertentu, nilai K=2 dipertahankan dalam analisis segmentasi akhir demi kedalaman akomodasi interpretasi profil bisnis ritel.")
 
         # Plot Metode Elbow & Silhouette secara Berdampingan
-        fig_eval, (ax_el, ax_sil) = plt.subplots(1, 2, figsize=(14, 5))
-        ax_el.plot(ks, inertias_eval, marker='o', color='royalblue')
-        ax_el.set_title('Elbow Method for Optimal K (Inertia)')
-        ax_el.set_xlabel('Number of Clusters (K)')
-        ax_el.set_ylabel('Inertia')
-        ax_el.grid(True)
-
-        ax_sil.plot(ks, sil_scores_eval, marker='s', color='crimson')
-        ax_sil.set_title('Silhouette Score for Optimal K')
-        ax_sil.set_xlabel('Number of Clusters (K)')
-        ax_sil.set_ylabel('Silhouette Score')
-        ax_sil.grid(True)
-        st.pyplot(fig_eval)
-
+        from yellowbrick.cluster import KElbowVisualizer
+        fig_elbow, ax_elbow = plt.subplots(figsize=(8, 5))
+        model_viz = KMeans(n_init=10, random_state=42)
+        visualizer = KElbowVisualizer(model_viz, k=(1,10), timings=False, locate_elbow=False, ax=ax_elbow, random_state=42)
+        visualizer.fit(k_inputs_eval)
+        k4_score = visualizer.k_scores_[3]
+        ax_elbow.axvline(x=4, color='black', linestyle='--', linewidth=2, label=f'elbow at k=4, score={k4_score:.3f}')
+        ax_elbow.legend()
+        st.pyplot(fig_elbow)
         st.divider()
         st.subheader("Visualisasi Sebaran Spasial Klaster (K=4)")
+
+        st.divider()
+        st.subheader("Confusion Matrix: Sebelum vs Sesudah SMOTE")
+        
+        import pickle
+        try:
+            cm_data = pickle.load(open('cm_data.pkl', 'rb'))
+            cm_before = cm_data['before']
+            cm_after = cm_data['after']
+        
+            from sklearn.metrics import ConfusionMatrixDisplay
+            fig_cm, ax = plt.subplots(1, 2, figsize=(15, 5))
+            ConfusionMatrixDisplay(cm_before, display_labels=segments.values()).plot(ax=ax[0], cmap='Blues', xticks_rotation=45)
+            ax[0].set_title('Confusion Matrix (Before SMOTE)')
+            ConfusionMatrixDisplay(cm_after, display_labels=segments.values()).plot(ax=ax[1], cmap='Greens', xticks_rotation=45)
+            ax[1].set_title('Confusion Matrix (After SMOTE)')
+            plt.tight_layout()
+            st.pyplot(fig_cm)
+        except FileNotFoundError:
+            st.warning("File cm_data.pkl belum tersedia. Jalankan notebook training dulu.")
 
         # Hitung Ulang Klaster Akhir Berbasis K=4 agar Grafik Sinkron Konsisten
         kmeans_viz = KMeans(n_clusters=4, random_state=42, n_init=10)
