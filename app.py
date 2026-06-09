@@ -4,330 +4,92 @@ import numpy as np
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
-import io
-from sklearn.preprocessing import LabelEncoder, OrdinalEncoder, StandardScaler
-from sklearn.decomposition import PCA
-from sklearn.cluster import KMeans
-from scipy.stats import iqr
-from sklearn.metrics import silhouette_score
-from mpl_toolkits.mplot3d import Axes3D
-
-# --- Helper Function for Outlier Handling ---
-def find_outlier(data, column, multiplier=1.5):
-    col_data = data[column]
-    Q1 = col_data.quantile(0.25)
-    Q3 = col_data.quantile(0.75)
-    IQR = Q3 - Q1
-    lower_bound = Q1 - multiplier * IQR
-    upper_bound = Q3 + multiplier * IQR
-    outliers = data.loc[(data[column] < lower_bound) | (data[column] > upper_bound)]
-    return outliers, upper_bound
-
-# --- Data Loading and Preprocessing (Self-contained for Streamlit) ---
-@st.cache_data
-def load_and_preprocess_data_full():
-    url = 'https://raw.githubusercontent.com/mazayazzz/TUBES-DATMIN/refs/heads/main/marketing_campaign.csv'
-    raw_df = pd.read_csv(url, sep=';')
-    df_original_five_raw = raw_df.head(5).copy()
-
-    df = raw_df.copy()
-
-    # Capture missing values before processing
-    missing_before = df.isnull().sum()[df.isnull().sum() > 0]
-    initial_rows = df.shape[0]
-
-    # Data Cleaning
-    df['Dt_Customer'] = pd.to_datetime(df['Dt_Customer'], format='mixed')
-    df['Income'] = pd.to_numeric(df['Income'], errors='coerce')
-    df.dropna(subset=['Income'], inplace=True)
-
-    # Replicate the column dropping logic as per notebook
-    temp_df_for_col_index_drop = raw_df.copy()
-    temp_df_for_col_index_drop['Dt_Customer'] = pd.to_datetime(temp_df_for_col_index_drop['Dt_Customer'], format='mixed')
-    temp_df_for_col_index_drop['Income'] = pd.to_numeric(temp_df_for_col_index_drop['Income'], errors='coerce')
-    temp_df_for_col_index_drop.dropna(subset=['Income'], inplace=True)
-    irrel_cols_names = temp_df_for_col_index_drop.columns[[8,15,19,20,21,22,23,24,25,26,27,28]]
-    df = df.drop(columns=irrel_cols_names, errors='ignore')
-
-    # Capture missing values after initial cleaning
-    missing_after_initial = df.isnull().sum()
-    rows_after_initial_drop = df.shape[0]
-
-    # Feature Engineering
-    df['AmtTotal'] = (df['MntWines'] + df['MntFruits'] + df['MntMeatProducts'] +
-                      df['MntFishProducts'] + df['MntSweetProducts'] + df['MntGoldProds'])
-    df['%Wine_Share'] = (100 * df['MntWines'] / df['AmtTotal']).round(1)
-    df.loc[df['AmtTotal'] == 0, '%Wine_Share'] = 0 
-    df['Wine_Spend'] = df['MntWines']
-    df['Age'] = 2014 - df['Year_Birth']
-    df['Purchase_Vol'] = df['NumWebPurchases'] + df['NumCatalogPurchases'] + df['NumStorePurchases']
-    df['Num_Children'] = df['Kidhome'] + df['Teenhome']
-    df['Parent'] = np.where(df['Num_Children'] > 0, 'Yes', 'No')
-
-    encoder = LabelEncoder()
-    df['Parent2'] = encoder.fit_transform(df.Parent)
-
-    max_date = pd.to_datetime('2014-12-31')
-    df['Loyalitas_Bulan'] = ((max_date - df['Dt_Customer']).dt.days / 30.44).round(1)
-
-    education_map = {'Graduation':'Graduate', 'PhD':'Postgraduate', 'Master':'Postgraduate', 'Basic':'Undergraduate', '2n':'Undergraduate'}
-    df['Education'] = df.Education.map(education_map)
-
-    edu_categories = ['Undergraduate', 'Graduate', 'Postgraduate']
-    oncoder = OrdinalEncoder(categories=[edu_categories])
-    df['Education2'] = oncoder.fit_transform(df[['Education']])
-
-    df = df.drop(columns=['MntFruits', 'MntMeatProducts', 'MntFishProducts', 'MntSweetProducts', 'MntGoldProds'], errors='ignore')
-
-    # Outlier handling
-    df_clean_processed = df.copy() 
-    Income_outliers, Income_upper = find_outlier(df_clean_processed, 'Income')
-    Age_outliers, Age_upper = find_outlier(df_clean_processed, 'Age')
-    Wine_outliers, Wine_upper = find_outlier(df_clean_processed, 'Wine_Spend')
-    AmtTotal_outliers, AmtTotal_upper = find_outlier(df_clean_processed, 'AmtTotal')
-
-    df_clean_processed.loc[df_clean_processed['Income'].isin(Income_outliers['Income']), 'Income'] = Income_upper
-    df_clean_processed.loc[df_clean_processed['Age'].isin(Age_outliers['Age']), 'Age'] = Age_upper
-    df_clean_processed.loc[df_clean_processed['Wine_Spend'].isin(Wine_outliers['Wine_Spend']), 'Wine_Spend'] = Wine_upper
-    if not AmtTotal_outliers.empty: 
-        df_clean_processed.loc[df_clean_processed['AmtTotal'].isin(AmtTotal_outliers['AmtTotal']), 'AmtTotal'] = AmtTotal_upper
-
-    return raw_df, df, df_clean_processed, df_original_five_raw, missing_before, initial_rows, missing_after_initial, rows_after_initial_drop
-
-raw_df, df_processed, df_clean, df_original_five_raw, missing_before, initial_rows, missing_after_initial, rows_after_initial_drop = load_and_preprocess_data_full()
-
-# Load models
-rf_model = pickle.load(open('model_rf (1).pkl', 'rb'))
-nb_model = pickle.load(open('model_nb.pkl', 'rb'))
-reg_model = pickle.load(open('model_reg.pkl', 'rb'))
-reg_scaler_loaded = pickle.load(open('reg_scaler.pkl', 'rb'))
+from sklearn.metrics import ConfusionMatrixDisplay
 
 # Set Page Config
-st.set_page_config(page_title="Wine Customer Analytics & Predictor", page_icon="🍷", layout="wide")
+st.set_page_config(page_title="Wine Customer Analytics", page_icon="🍷", layout="wide")
 
-# --- MAPPING SEGMEN & REKOMENDASI KOMPREHENSIF ---
-segments = {
-    0: 'The Uninterested',
-    1: 'Premium Wine Enthusiasts',
-    2: 'Budget Wine Loyalists',
-    3: 'Potential Wine Converts'
-}
+# Load artifacts
+@st.cache_resource
+def load_artifacts():
+    rf_model = pickle.load(open('model_rf (1).pkl', 'rb'))
+    rf_smt_model = pickle.load(open('model_rf_smt.pkl', 'rb'))
+    nb_model = pickle.load(open('model_nb.pkl', 'rb'))
+    reg_model = pickle.load(open('model_reg.pkl', 'rb'))
+    reg_scaler = pickle.load(open('reg_scaler.pkl', 'rb'))
+    cm_data = pickle.load(open('cm_data.pkl', 'rb'))
+    metadata = pickle.load(open('metadata.pkl', 'rb'))
+    df_clean = pd.read_csv('df_clean_dashboard.csv')
+    return rf_model, rf_smt_model, nb_model, reg_model, reg_scaler, cm_data, metadata, df_clean
 
-rekomendasi = {
-    0: "🎯 **Rekomendasi untuk The Uninterested:**\n* Alokasikan dana pemasaran pada level terendah (*low priority*) untuk menghemat biaya.\n* Terapkan otomatisasi email skala besar (*mass blast*) berisi promo produk umum non-wine saja.",
-    1: "🎯 **Rekomendasi untuk Premium Wine Enthusiasts:**\n* Prioritaskan segmen ini! Buat program loyalitas eksklusif VIP & penawaran tier premium.\n* Berikan kuota pre-order eksklusif untuk koleksi minuman *limited edition* or undang ke acara VIP wine-tasting.",
-    2: "🎯 **Rekomendasi untuk Budget Wine Loyalists:**\n* Terapkan strategi *value-for-money* seperti promo bundling ('Beli 3 Gratis 1').\n* Kirimkan voucher khusus potongan harga berbatas waktu ekonomis pada akhir pekan.",
-    3: "🎯 **Rekomendasi untuk Potential Wine Converts:**\n* Gunakan taktik *cross-selling* berdasarkan komoditas belanja umum non-wine yang sering mereka borong.\n* Edukasi mereka lewat newsletter resep makanan yang cocok disajikan bersama wine (*food-wine pairing*) disertai sampel tester diskon."
-}
+rf_model, rf_smt_model, nb_model, reg_model, reg_scaler, cm_data, metadata, df_clean = load_artifacts()
 
-# --- SIDEBAR MENU NAVIGATION (GANTI GAMBAR JADI CUSTOMER ANALYSIS) ---
-st.sidebar.image("https://cdn-icons-png.flaticon.com/512/4341/4341772.png", width=110)
-st.sidebar.title("Navigasi Aplikasi")
-menu = st.sidebar.radio("Pilih Menu:", ["Prediksi Pelanggan Baru", "Eksplorasi Data & Visualisasi"])
+segments = {0: 'The Uninterested', 1: 'Premium Wine Enthusiasts', 2: 'Budget Wine Loyalists', 3: 'Potential Wine Converts'}
 
-# ==============================================================================
-# MENU 1: PREDIKSI PELANGGAN BARU (TANPA INPUT LOYALITAS)
-# ==============================================================================
-if menu == "Prediksi Pelanggan Baru":
-    st.title("🔮 Form Prediksi Segmen & Estimasi Belanja Pelanggan")
-    st.markdown("Gunakan panel ini untuk menguji performa prediksi gabungan model Klasifikasi dan Regresi.")
+st.sidebar.title("Navigasi")
+menu = st.sidebar.radio("Pilih Menu:", ["Prediksi", "Visualisasi & Evaluasi"])
+
+if menu == "Prediksi":
+    st.title("🔮 Prediksi Segmen Pelanggan")
+    use_smote = st.checkbox("Gunakan Model SMOTE (Lebih Akurat untuk Kelas Minoritas)", value=True)
     
-    # Pilihan Model Klasifikasi
-    pilihan_model = st.selectbox("Pilih Algoritma Klasifikasi:", ["Random Forest Classifier (Tuned)", "Gaussian Naive Bayes"])
-    
-    st.subheader("Masukkan Profil Demografi Pelanggan")
     col1, col2 = st.columns(2)
     with col1:
-        income = st.number_input("Pendapatan Tahunan (Euro):", min_value=0, value=int(df_clean['Income'].mean()), step=1000)
-        age = st.slider("Usia Pelanggan:", 18, 100, int(df_clean['Age'].mean()))
-        education = st.selectbox("Tingkat Pendidikan:", options=[0, 1, 2], format_func=lambda x: ["Undergraduate", "Graduate", "Postgraduate"][x], index=int(df_clean['Education2'].mode()[0]))
+        income = st.number_input("Income (Euro)", value=50000)
+        age = st.slider("Age", 18, 100, 40)
+        edu = st.selectbox("Education", [0, 1, 2], format_func=lambda x: ["Undergraduate", "Graduate", "Postgraduate"][x])
     with col2:
-        parent = st.radio("Apakah Status Orang Tua?", options=[0, 1], format_func=lambda x: "Bukan / Tidak" if x == 0 else "Ya", index=int(df_clean['Parent2'].mode()[0]))
-        num_children = st.number_input("Jumlah Anak Kandung:", min_value=0, max_value=10, value=int(df_clean['Num_Children'].mean()))
-        
-        # Nilai loyalitas disembunyikan dari UI dan diisi nilai rata-rata secara otomatis agar model tidak error
-        loyalitas_default = float(int(df_clean['Loyalitas_Bulan'].mean()))
-        
-    if st.button("Jalankan Proses Analisis"):
-        # Menggabungkan parameter input dengan nilai default loyalitas
-        input_data = pd.DataFrame([[income, age, float(education), int(parent), num_children, loyalitas_default]],
-                                  columns=['Income', 'Age', 'Education2', 'Parent2', 'Num_Children', 'Loyalitas_Bulan'])
-        
-        # Jalankan Model Klasifikasi Terpilih
-        if pilihan_model == "Random Forest Classifier (Tuned)":
-            pred_class = rf_model.predict(input_data)[0]
-            probs = rf_model.predict_proba(input_data).max()
-        else:
-            pred_class = nb_model.predict(input_data)[0]
-            probs = nb_model.predict_proba(input_data).max()
-            
-        # Jalankan Model Regresi (Gunakan Scaler bawaan)
-        scaled_input = reg_scaler_loaded.transform(input_data)
-        pred_amt = max(0, reg_model.predict(scaled_input)[0])
-        
-        # Display Hasil Akhir Secara Kolaboratif (Layout Versi Pertama)
-        st.divider()
-        res_col1, res_col2 = st.columns(2)
-        
-        with res_col1:
-            st.subheader("Hasil Segmentasi")
-            st.info(f"Klaster Terprediksi: **{segments[pred_class]}**")
-            st.write(f"Tingkat Keyakinan (*Confidence*): {probs:.2%}")
-            
-        with res_col2:
-            st.subheader("Estimasi Total Pengeluaran")
-            st.success(f"**{pred_amt:,.2f} Euro**")
-            
-        st.divider()
-        st.subheader("Rekomendasi Strategi Bisnis untuk Profil Ini")
-        st.markdown(rekomendasi[pred_class])
+        parent = st.radio("Status Orang Tua?", [0, 1], format_func=lambda x: "Bukan" if x==0 else "Ya")
+        kids = st.number_input("Jumlah Anak", 0, 10, 1)
+        loyal = st.number_input("Loyalitas (Bulan)", value=20.0)
 
-# ==============================================================================
-# MENU 2: EKSPLORASI DATA & VISUALISASI
-# ==============================================================================
-elif menu == "Eksplorasi Data & Visualisasi":
-    st.title("📊 Profil Eksplorasi Data & Detail Pra-pemrosesan")
-    
-    tab_data, tab_cluster, tab_dist = st.tabs(["Ringkasan & Metadata Dataset", "Analisis Optimalisasi K-Means & PCA", "Sebaran Fitur & Outliers"])
+    if st.button("Predict"):
+        input_data = np.array([[income, age, edu, parent, kids, loyal]])
+        model = rf_smt_model if use_smote else rf_model
+        pred = model.predict(input_data)[0]
+        st.success(f"Segmen Pelanggan: **{segments[pred]}**")
 
-    with tab_data:
-        st.subheader("1. Deteksi Missing Values Sebelum Penanganan")
-        st.code(f"Total Baris Awal Dataset (Original): {initial_rows}")
-        if not missing_before.empty:
-            st.dataframe(missing_before.reset_index().rename(columns={'index': 'Nama Kolom', 0: 'Jumlah Missing'}))
-        else:
-            st.write("Aman. Tidak ada missing value sebelum manipulasi data.")
+else:
+    st.title("📊 Visualisasi & Evaluasi")
+    tab1, tab2, tab3 = st.tabs(["K-Means Evaluation", "Classification (SMOTE) Evaluation", "PCA Cluster Visualization"])
 
-        st.subheader("2. Pengecekan Missing Values Setelah Initial Cleaning")
-        st.code(f"Total Baris Setelah Drop Baris Kosong Income: {rows_after_initial_drop}")
-        if missing_after_initial.sum() > 0:
-            st.dataframe(missing_after_initial[missing_after_initial > 0].reset_index().rename(columns={'index': 'Nama Kolom', 0: 'Jumlah Missing'}))
-        else:
-            st.write("Sempurna! 0 baris bernilai kosong setelah penanganan data.")
-
-        st.subheader("3. Informasi Struktur Tipe Data Objek (Data Info)")
-        buffer = io.StringIO()
-        df_processed.info(buf=buffer)
-        s = buffer.getvalue()
-        st.text(s)
-
-        st.subheader("4. Analisis Statistik Deskriptif Matematika")
-        st.dataframe(df_processed.describe())
-
-        st.subheader("5. Komparasi 5 Baris Data Awal")
-        st.write(">> Lima Baris Pertama Data Mentah (Original Raw):")
-        st.dataframe(df_original_five_raw)
-        st.write(">> Lima Baris Pertama Data Hasil Preprocessing & Feature Engineering:")
-        st.dataframe(df_processed.head(5))
-
-    with tab_cluster:
+    with tab1:
         st.subheader("Metrik Evaluasi Klaster K-Means")
+        col_ev1, col_ev2 = st.columns(2)
         
-        scaler_kmeans_eval = StandardScaler()
-        features_to_cluster_eval = ['Wine_Spend', '%Wine_Share', 'Purchase_Vol', 'Loyalitas_Bulan']
-        k_inputs_eval = scaler_kmeans_eval.fit_transform(df_clean[features_to_cluster_eval])
-
-        inertias_eval = []
-        sil_scores_eval = []
-        ks = range(2, 11)
-
-        for k in ks:
-            kmeans_eval = KMeans(n_clusters=k, n_init=10, random_state=42)
-            kmeans_eval.fit(k_inputs_eval)
-            inertias_eval.append(kmeans_eval.inertia_)
-            sil_scores_eval.append(silhouette_score(k_inputs_eval, kmeans_eval.labels_))
-
-        best_k_idx = np.argmax(sil_scores_eval)
-        best_k_silhouette = ks[best_k_idx]
-        st.markdown(f"💡 **Nilai K Terbaik Secara Matematis (Silhouette Score):** `k = {best_k_silhouette}`")
-        st.info("Meskipun Silhouette Score tertinggi berada pada K tertentu, nilai K=2 dipertahankan dalam analisis segmentasi akhir demi kedalaman akomodasi interpretasi profil bisnis ritel.")
-
-        # Plot Metode Elbow & Silhouette secara Berdampingan
-        fig_eval, (ax_el, ax_sil) = plt.subplots(1, 2, figsize=(14, 5))
-        ax_el.plot(ks, inertias_eval, marker='o', color='royalblue')
-        ax_el.set_title('Elbow Method for Optimal K (Inertia)')
+        # Elbow Plot
+        fig_el, ax_el = plt.subplots()
+        ax_el.plot(metadata['means_k'], metadata['inertias'], marker='o', color='royalblue')
+        ax_el.set_title('Elbow Method (Inertia)')
         ax_el.set_xlabel('Number of Clusters (K)')
-        ax_el.set_ylabel('Inertia')
         ax_el.grid(True)
-
-        ax_sil.plot(ks, sil_scores_eval, marker='s', color='crimson')
-        ax_sil.set_title('Silhouette Score for Optimal K')
-        ax_sil.set_xlabel('Number of Clusters (K)')
-        ax_sil.set_ylabel('Silhouette Score')
-        ax_sil.grid(True)
-        st.pyplot(fig_eval)
-
-        st.divider()
-        st.subheader("Visualisasi Sebaran Spasial Klaster (K=4)")
-
-        # Hitung Ulang Klaster Akhir Berbasis K=4 agar Grafik Sinkron Konsisten
-        kmeans_viz = KMeans(n_clusters=4, random_state=42, n_init=10)
-        df_clean['cluster_viz'] = kmeans_viz.fit_predict(k_inputs_eval)
-
-        # Reduksi PCA untuk Visualisasi Efektif
-        pca_2d = PCA(n_components=2, random_state=42)
-        pca_data_2d = pca_2d.fit_transform(k_inputs_eval)
-        df_clean['pca_x'] = pca_data_2d[:, 0]
-        df_clean['pca_y'] = pca_data_2d[:, 1]
-
-        pca_3d = PCA(n_components=3, random_state=42)
-        pca_data_3d = pca_3d.fit_transform(k_inputs_eval)
-        df_clean['pca_z'] = pca_data_3d[:, 2]
-
-        col_p1, col_p2 = st.columns(2)
-        with col_p1:
-            st.write(">> Plot Distribusi 2D PCA")
-            fig_pca_2d, ax_pca_2d = plt.subplots(figsize=(10, 7))
-            sns.scatterplot(x='pca_x', y='pca_y', hue='cluster_viz', data=df_clean, palette='Set1', alpha=0.8, ax=ax_pca_2d)
-            ax_pca_2d.set_title('Visualisasi Klaster Menggunakan PCA (2D) - K=4')
-            ax_pca_2d.grid(True)
-            st.pyplot(fig_pca_2d)
-
-        with col_p2:
-            st.write(">> Plot Distribusi 3D PCA")
-            fig_pca_3d = plt.figure(figsize=(10, 8))
-            ax_pca_3d = fig_pca_3d.add_subplot(111, projection='3d')
-            scatter = ax_pca_3d.scatter(df_clean['pca_x'], df_clean['pca_y'], df_clean['pca_z'],
-                                        c=df_clean['cluster_viz'], cmap='Set1', s=40, alpha=0.7)
-            ax_pca_3d.set_title('Visualisasi Klaster Menggunakan PCA (3D) - K=4')
-            ax_pca_3d.set_xlabel('PC 1')
-            ax_pca_3d.set_ylabel('PC 2')
-            ax_pca_3d.set_zlabel('PC 3')
-            plt.colorbar(scatter, ax=ax_pca_3d, label='Cluster ID')
-            st.pyplot(fig_pca_3d)
-
-    with tab_dist:
-        st.subheader("Karakteristik Atribut Boxplot per Klaster Segmen")
-        fitur_pilih = st.selectbox("Pilih Atribut untuk Ditinjau:", ['Wine_Spend', '%Wine_Share', 'Purchase_Vol', 'Loyalitas_Bulan', 'Income', 'Age'])
+        col_ev1.pyplot(fig_el)
         
-        fig_box_seg, ax_box_seg = plt.subplots(figsize=(8, 4))
-        sns.boxplot(x='cluster_viz', y=fitur_pilih, data=df_clean, palette='Set1', ax=ax_box_seg)
-        ax_box_seg.set_xticklabels([f"C{i} - {segments[i]}" for i in range(4)], rotation=15)
-        ax_box_seg.set_title(f"Komparasi Boxplot Fitur: {fitur_pilih} Lintas Segmen")
-        st.pyplot(fig_box_seg)
+        # Silhouette Plot
+        fig_sil, ax_sil = plt.subplots()
+        ax_sil.plot(metadata['means_k'], metadata['sil_scores'], marker='s', color='crimson')
+        ax_sil.set_title('Silhouette Score per K')
+        ax_sil.set_xlabel('Number of Clusters (K)')
+        ax_sil.grid(True)
+        col_ev2.pyplot(fig_sil)
+        st.info(f"Nilai K terbaik secara matematis: k={metadata['best_k_val']}. Namun k=4 digunakan untuk kebutuhan bisnis.")
 
-        st.divider()
-        st.subheader("Deteksi Batas Outliers Awal (Boxplot)")
-        fig_outliers, axes = plt.subplots(2, 2, figsize=(14, 8))
-        sns.boxplot(y=df_clean['Income'], ax=axes[0, 0], color='skyblue')
-        axes[0, 0].set_title('Income Outliers Status')
-        sns.boxplot(y=df_clean['Age'], ax=axes[0, 1], color='lightgreen')
-        axes[0, 1].set_title('Age Outliers Status')
-        sns.boxplot(y=df_clean['Wine_Spend'], ax=axes[1, 0], color='coral')
-        axes[1, 0].set_title('Wine Spend Outliers Status')
-        sns.boxplot(y=df_clean['AmtTotal'], ax=axes[1, 1], color='gold')
-        axes[1, 1].set_title('Total Amount Outliers Status')
+    with tab2:
+        st.subheader("Performa Model: Sebelum vs Sesudah SMOTE")
+        fig_cm, ax_cm = plt.subplots(1, 2, figsize=(12, 5))
+        ConfusionMatrixDisplay(cm_data['before'], display_labels=list(segments.values())).plot(ax=ax_cm[0], cmap='Blues', xticks_rotation=45)
+        ax_cm[0].set_title('Sebelum SMOTE')
+        ConfusionMatrixDisplay(cm_data['after'], display_labels=list(segments.values())).plot(ax=ax_cm[1], cmap='Greens', xticks_rotation=45)
+        ax_cm[1].set_title('Sesudah SMOTE')
         plt.tight_layout()
-        st.pyplot(fig_outliers)
+        st.pyplot(fig_cm)
+        st.write("**Analisis:** SMOTE membantu menyeimbangkan distribusi data sehingga model lebih sensitif terhadap kelas minoritas.")
 
-        st.subheader("Distribusi Geometris Fitur Numerik Utama (Histogram)")
-        fig_hist, axes_hist = plt.subplots(2, 3, figsize=(15, 8))
-        df_clean[['Income','Age','Wine_Spend','Purchase_Vol','Loyalitas_Bulan', 'Num_Children']].hist(bins=20, ax=axes_hist.flatten(), color='purple', edgecolor='black', alpha=0.7)
-        fig_hist.suptitle('Distributions of Key Numerical Features', fontsize=14)
-        plt.tight_layout()
-        st.pyplot(fig_hist)
+    with tab3:
+        st.subheader("Sebaran Klaster PCA 2D")
+        fig_pca, ax_pca = plt.subplots(figsize=(10, 6))
+        sns.scatterplot(data=df_clean, x='pca_x', y='pca_y', hue='cluster', palette='Set1', ax=ax_pca, alpha=0.7)
+        ax_pca.set_title("Pemisahan Klaster Pelanggan dalam Ruang 2D")
+        st.pyplot(fig_pca)
 
-# --- FOOTER IDENTITAS ---
-st.markdown("---")
-st.markdown("<h4 style='text-align: center; color: gray;'>Dibuat Oleh: Kelompok 7</h4>", unsafe_allow_html=True)
-st.caption("Dashboard Analytics terintegrasi - K-Means, PCA, Random Forest, Naive Bayes & Linear Regression Engine.")
+st.sidebar.markdown("---\nKelompok 7")
