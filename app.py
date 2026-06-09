@@ -263,6 +263,10 @@ elif menu == "Eksplorasi Data & Visualisasi":
         scaler_kmeans_eval = StandardScaler()
         features_to_cluster_eval = ['Wine_Spend', '%Wine_Share', 'Purchase_Vol', 'Loyalitas_Bulan']
         k_inputs_eval = scaler_kmeans_eval.fit_transform(df_clean[features_to_cluster_eval])
+        ax_elbow.axvline(x=4, color='gray', linestyle='--', linewidth=1.5, alpha=0.4)
+        ax_elbow.axvline(x=4, color='black', linestyle='--', linewidth=2,
+                         label=f'elbow at k=4, score={k4_score:.3f}')
+        ax_elbow.legend()
 
         inertias_eval = []
         sil_scores_eval = []
