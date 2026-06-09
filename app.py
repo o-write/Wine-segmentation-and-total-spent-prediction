@@ -284,17 +284,19 @@ elif menu == "Eksplorasi Data & Visualisasi":
         st.info("Meskipun Silhouette Score tertinggi berada pada K tertentu, nilai K=2 dipertahankan dalam analisis segmentasi akhir demi kedalaman akomodasi interpretasi profil bisnis ritel.")
 
         # Plot Metode Elbow & Silhouette secara Berdampingan
-        from yellowbrick.cluster import KElbowVisualizer
+       from yellowbrick.cluster import KElbowVisualizer
+
         fig_elbow, ax_elbow = plt.subplots(figsize=(8, 5))
         model_viz = KMeans(n_init=10, random_state=42)
         visualizer = KElbowVisualizer(model_viz, k=(1,10), timings=False, locate_elbow=False, ax=ax_elbow, random_state=42)
         visualizer.fit(k_inputs_eval)
         k4_score = visualizer.k_scores_[3]
-        ax_elbow.axvline(x=4, color='black', linestyle='--', linewidth=2, label=f'elbow at k=4, score={k4_score:.3f}')
+        
+        ax_elbow.axvline(x=4, color='gray', linestyle='--', linewidth=1.5, alpha=0.4)
+        ax_elbow.axvline(x=4, color='black', linestyle='--', linewidth=2,
+                         label=f'elbow at k=4, score={k4_score:.3f}')
         ax_elbow.legend()
         st.pyplot(fig_elbow)
-        st.divider()
-        st.subheader("Visualisasi Sebaran Spasial Klaster (K=4)")
 
         st.divider()
         st.subheader("Confusion Matrix: Sebelum vs Sesudah SMOTE")
