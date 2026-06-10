@@ -1,3 +1,4 @@
+%%writefile app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -113,12 +114,13 @@ def load_and_preprocess_data_full():
 raw_df, df_processed, df_clean, df_original_five_raw, missing_before, initial_rows, initial_cols, missing_after_initial, rows_after_initial_drop, initial_duplicates_count, rows_after_duplicates_drop, missing_before_count, missing_after_initial_count = load_and_preprocess_data_full()
 
 # Load models
-rf_model = pickle.load(open('model_rf (2).pkl', 'rb'))
+rf_model = pickle.load(open('model_rf.pkl', 'rb'))
 nb_model = pickle.load(open('model_nb.pkl', 'rb'))
 reg_model = pickle.load(open('model_reg.pkl', 'rb'))
 reg_scaler_loaded = pickle.load(open('reg_scaler.pkl', 'rb'))
 kmeans_model = pickle.load(open('kmeans_model.pkl', 'rb'))
 kmeans_scaler = pickle.load(open('kmeans_scaler.pkl', 'rb'))
+nb_scaler = pickle.load(open('nb_scaler.pkl', 'rb'))
 
 # Set Page Config
 st.set_page_config(page_title="Wine Customer Analytics & Predictor", page_icon="🍷", layout="wide")
@@ -173,8 +175,9 @@ if menu == "Prediksi Pelanggan Baru":
             pred_class = rf_model.predict(input_data)[0]
             probs = rf_model.predict_proba(input_data).max()
         else:
-            pred_class = nb_model.predict(input_data)[0]
-            probs = nb_model.predict_proba(input_data).max()
+            input_nb = nb_scaler.transform(input_data)
+            pred_class = nb_model.predict(input_nb)[0]
+            probs = nb_model.predict_proba(input_nb).max()
 
         # Jalankan Model Regresi (Gunakan Scaler bawaan)
         scaled_input = reg_scaler_loaded.transform(input_data)
