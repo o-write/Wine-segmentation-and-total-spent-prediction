@@ -114,7 +114,7 @@ raw_df, df_processed, df_clean, df_original_five_raw, missing_before, initial_ro
 
 # Load models
 rf_model = pickle.load(open('model_rf (2).pkl', 'rb'))
-nb_model = pickle.load(open('model_nb.pkl', 'rb'))
+nb_model = pickle.load(open('model_nb (1).pkl', 'rb'))
 reg_model = pickle.load(open('model_reg.pkl', 'rb'))
 reg_scaler_loaded = pickle.load(open('reg_scaler.pkl', 'rb'))
 kmeans_model = pickle.load(open('kmeans_model.pkl', 'rb'))
