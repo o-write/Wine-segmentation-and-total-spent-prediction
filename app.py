@@ -11,6 +11,7 @@ from sklearn.cluster import KMeans
 from scipy.stats import iqr
 from sklearn.metrics import silhouette_score
 from mpl_toolkits.mplot3d import Axes3D
+from yellowbrick.cluster import KElbowVisualizer
 
 # --- Helper Function for Outlier Handling ---
 def find_outlier(data, column, multiplier=1.5):
@@ -283,8 +284,7 @@ elif menu == "Eksplorasi Data & Visualisasi":
         st.markdown(f"💡 **Nilai K Terbaik Secara Matematis (Silhouette Score):** `k = {best_k_silhouette}`")
         st.info("Meskipun Silhouette Score tertinggi berada pada K tertentu, nilai K=2 dipertahankan dalam analisis segmentasi akhir demi kedalaman akomodasi interpretasi profil bisnis ritel.")
 
-        # Plot Metode Elbow & Silhouette secara Berdampingan
-       from yellowbrick.cluster import KElbowVisualizer
+    
 
         fig_elbow, ax_elbow = plt.subplots(figsize=(8, 5))
         model_viz = KMeans(n_init=10, random_state=42)
