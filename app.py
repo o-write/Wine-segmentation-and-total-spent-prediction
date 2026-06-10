@@ -11,7 +11,6 @@ from sklearn.cluster import KMeans
 from scipy.stats import iqr
 from sklearn.metrics import silhouette_score
 from mpl_toolkits.mplot3d import Axes3D
-from yellowbrick.cluster import KElbowVisualizer
 
 # --- Helper Function for Outlier Handling ---
 def find_outlier(data, column, multiplier=1.5):
@@ -114,10 +113,12 @@ def load_and_preprocess_data_full():
 raw_df, df_processed, df_clean, df_original_five_raw, missing_before, initial_rows, initial_cols, missing_after_initial, rows_after_initial_drop, initial_duplicates_count, rows_after_duplicates_drop, missing_before_count, missing_after_initial_count = load_and_preprocess_data_full()
 
 # Load models
-rf_model = pickle.load(open('model_rf (1).pkl', 'rb'))
+rf_model = pickle.load(open('model_rf.pkl', 'rb'))
 nb_model = pickle.load(open('model_nb.pkl', 'rb'))
 reg_model = pickle.load(open('model_reg.pkl', 'rb'))
 reg_scaler_loaded = pickle.load(open('reg_scaler.pkl', 'rb'))
+kmeans_model = pickle.load(open('kmeans_model.pkl', 'rb'))
+kmeans_scaler = pickle.load(open('kmeans_scaler.pkl', 'rb'))
 
 # Set Page Config
 st.set_page_config(page_title="Wine Customer Analytics & Predictor", page_icon="🍷", layout="wide")
@@ -203,7 +204,9 @@ elif menu == "Eksplorasi Data & Visualisasi":
     st.title("📊 Profil Eksplorasi Data & Detail Pra-pemrosesan")
 
     tab_data, tab_cluster, tab_dist = st.tabs(["Ringkasan & Metadata Dataset", "Analisis Optimalisasi K-Means & PCA", "Sebaran Fitur & Outliers"])
-
+    features_to_cluster_eval = ['Wine_Spend', '%Wine_Share', 'Purchase_Vol', 'Loyalitas_Bulan']
+    k_inputs_eval = kmeans_scaler.transform(df_clean[features_to_cluster_eval])
+    df_clean['cluster_viz'] = kmeans_model.predict(k_inputs_eval)
     with tab_data:
         st.subheader("1. Ringkasan Metadata Dataset")
         metadata_summary = pd.DataFrame({
@@ -260,50 +263,39 @@ elif menu == "Eksplorasi Data & Visualisasi":
 
     with tab_cluster:
         st.subheader("Metrik Evaluasi Klaster K-Means")
-    
-        scaler_kmeans_eval = StandardScaler()
-        features_to_cluster_eval = ['Wine_Spend', '%Wine_Share', 'Purchase_Vol', 'Loyalitas_Bulan']
-        k_inputs_eval = scaler_kmeans_eval.fit_transform(df_clean[features_to_cluster_eval])
-    
+
         inertias_eval = []
         sil_scores_eval = []
         ks = range(2, 11)
-    
+
         for k in ks:
             kmeans_eval = KMeans(n_clusters=k, n_init=10, random_state=42)
             kmeans_eval.fit(k_inputs_eval)
             inertias_eval.append(kmeans_eval.inertia_)
             sil_scores_eval.append(silhouette_score(k_inputs_eval, kmeans_eval.labels_))
-    
+
         best_k_idx = np.argmax(sil_scores_eval)
         best_k_silhouette = ks[best_k_idx]
         st.markdown(f"💡 **Nilai K Terbaik Secara Matematis (Silhouette Score):** `k = {best_k_silhouette}`")
-        st.info("Meskipun Silhouette Score tertinggi berada pada K tertentu, nilai K=4 dipertahankan dalam analisis segmentasi akhir demi kedalaman akomodasi interpretasi profil bisnis ritel.")
-        st.image('elbow_plot.png', caption='Distortion Score Elbow for KMeans Clustering')
-    
-        st.divider()
-        st.subheader("Confusion Matrix: Sebelum vs Sesudah SMOTE")
-        
-        import pickle
-        try:
-            cm_data = pickle.load(open('cm_data.pkl', 'rb'))
-            cm_before = cm_data['before']
-            cm_after = cm_data['after']
-        
-            from sklearn.metrics import ConfusionMatrixDisplay
-            fig_cm, ax = plt.subplots(1, 2, figsize=(15, 5))
-            ConfusionMatrixDisplay(cm_before, display_labels=segments.values()).plot(ax=ax[0], cmap='Blues', xticks_rotation=45)
-            ax[0].set_title('Confusion Matrix (Before SMOTE)')
-            ConfusionMatrixDisplay(cm_after, display_labels=segments.values()).plot(ax=ax[1], cmap='Greens', xticks_rotation=45)
-            ax[1].set_title('Confusion Matrix (After SMOTE)')
-            plt.tight_layout()
-            st.pyplot(fig_cm)
-        except FileNotFoundError:
-            st.warning("File cm_data.pkl belum tersedia. Jalankan notebook training dulu.")
+        st.info("Meskipun Silhouette Score tertinggi berada pada K tertentu, nilai K=2 dipertahankan dalam analisis segmentasi akhir demi kedalaman akomodasi interpretasi profil bisnis ritel.")
 
-        # Hitung Ulang Klaster Akhir Berbasis K=4 agar Grafik Sinkron Konsisten
-        kmeans_viz = KMeans(n_clusters=4, random_state=42, n_init=10)
-        df_clean['cluster_viz'] = kmeans_viz.fit_predict(k_inputs_eval)
+        # Plot Metode Elbow & Silhouette secara Berdampingan
+        fig_eval, (ax_el, ax_sil) = plt.subplots(1, 2, figsize=(14, 5))
+        ax_el.plot(ks, inertias_eval, marker='o', color='royalblue')
+        ax_el.set_title('Elbow Method for Optimal K (Inertia)')
+        ax_el.set_xlabel('Number of Clusters (K)')
+        ax_el.set_ylabel('Inertia')
+        ax_el.grid(True)
+
+        ax_sil.plot(ks, sil_scores_eval, marker='s', color='crimson')
+        ax_sil.set_title('Silhouette Score for Optimal K')
+        ax_sil.set_xlabel('Number of Clusters (K)')
+        ax_sil.set_ylabel('Silhouette Score')
+        ax_sil.grid(True)
+        st.pyplot(fig_eval)
+
+        st.divider()
+        st.subheader("Visualisasi Sebaran Spasial Klaster (K=4)")
 
         # Reduksi PCA untuk Visualisasi Efektif
         pca_2d = PCA(n_components=2, random_state=42)
