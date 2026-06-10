@@ -278,7 +278,7 @@ elif menu == "Eksplorasi Data & Visualisasi":
         best_k_idx = np.argmax(sil_scores_eval)
         best_k_silhouette = ks[best_k_idx]
         st.markdown(f"💡 **Nilai K Terbaik Secara Matematis (Silhouette Score):** `k = {best_k_silhouette}`")
-        st.info("Meskipun Silhouette Score tertinggi berada pada K tertentu, nilai K=2 dipertahankan dalam analisis segmentasi akhir demi kedalaman akomodasi interpretasi profil bisnis ritel.")
+        st.info("Meskipun Silhouette Score tertinggi berada pada K tertentu, nilai K=4 dipertahankan dalam analisis segmentasi akhir demi kedalaman akomodasi interpretasi profil bisnis ritel.")
         st.image('elbow_plot.png', caption='Distortion Score Elbow for KMeans Clustering')
     
         st.divider()
