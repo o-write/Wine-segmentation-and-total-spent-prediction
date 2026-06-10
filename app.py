@@ -260,44 +260,37 @@ elif menu == "Eksplorasi Data & Visualisasi":
 
     with tab_cluster:
         st.subheader("Metrik Evaluasi Klaster K-Means")
-
+    
         scaler_kmeans_eval = StandardScaler()
         features_to_cluster_eval = ['Wine_Spend', '%Wine_Share', 'Purchase_Vol', 'Loyalitas_Bulan']
         k_inputs_eval = scaler_kmeans_eval.fit_transform(df_clean[features_to_cluster_eval])
-        ax_elbow.axvline(x=4, color='gray', linestyle='--', linewidth=1.5, alpha=0.4)
-        ax_elbow.axvline(x=4, color='black', linestyle='--', linewidth=2,
-                         label=f'elbow at k=4, score={k4_score:.3f}')
-        ax_elbow.legend()
-
+    
         inertias_eval = []
         sil_scores_eval = []
         ks = range(2, 11)
-
+    
         for k in ks:
             kmeans_eval = KMeans(n_clusters=k, n_init=10, random_state=42)
             kmeans_eval.fit(k_inputs_eval)
             inertias_eval.append(kmeans_eval.inertia_)
             sil_scores_eval.append(silhouette_score(k_inputs_eval, kmeans_eval.labels_))
-
+    
         best_k_idx = np.argmax(sil_scores_eval)
         best_k_silhouette = ks[best_k_idx]
         st.markdown(f"💡 **Nilai K Terbaik Secara Matematis (Silhouette Score):** `k = {best_k_silhouette}`")
         st.info("Meskipun Silhouette Score tertinggi berada pada K tertentu, nilai K=2 dipertahankan dalam analisis segmentasi akhir demi kedalaman akomodasi interpretasi profil bisnis ritel.")
-
     
-
         fig_elbow, ax_elbow = plt.subplots(figsize=(8, 5))
         model_viz = KMeans(n_init=10, random_state=42)
         visualizer = KElbowVisualizer(model_viz, k=(1,10), timings=False, locate_elbow=False, ax=ax_elbow, random_state=42)
         visualizer.fit(k_inputs_eval)
         k4_score = visualizer.k_scores_[3]
-        
         ax_elbow.axvline(x=4, color='gray', linestyle='--', linewidth=1.5, alpha=0.4)
         ax_elbow.axvline(x=4, color='black', linestyle='--', linewidth=2,
                          label=f'elbow at k=4, score={k4_score:.3f}')
         ax_elbow.legend()
         st.pyplot(fig_elbow)
-
+    
         st.divider()
         st.subheader("Confusion Matrix: Sebelum vs Sesudah SMOTE")
         
