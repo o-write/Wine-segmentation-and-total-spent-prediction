@@ -9,8 +9,9 @@ from sklearn.preprocessing import LabelEncoder, OrdinalEncoder, StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from scipy.stats import iqr
-from sklearn.metrics import silhouette_score
+from sklearn.metrics import silhouette_score, ConfusionMatrixDisplay
 from mpl_toolkits.mplot3d import Axes3D
+from yellowbrick.cluster import KElbowVisualizer
 
 # --- Helper Function for Outlier Handling ---
 def find_outlier(data, column, multiplier=1.5):
@@ -113,13 +114,14 @@ def load_and_preprocess_data_full():
 raw_df, df_processed, df_clean, df_original_five_raw, missing_before, initial_rows, initial_cols, missing_after_initial, rows_after_initial_drop, initial_duplicates_count, rows_after_duplicates_drop, missing_before_count, missing_after_initial_count = load_and_preprocess_data_full()
 
 # Load models
-rf_model = pickle.load(open('model_rf (2).pkl', 'rb'))
-nb_model = pickle.load(open('model_nb (1).pkl', 'rb'))
+rf_model = pickle.load(open('model_rf.pkl', 'rb'))
+nb_model = pickle.load(open('model_nb.pkl', 'rb'))
 reg_model = pickle.load(open('model_reg.pkl', 'rb'))
 reg_scaler_loaded = pickle.load(open('reg_scaler.pkl', 'rb'))
 kmeans_model = pickle.load(open('kmeans_model.pkl', 'rb'))
 kmeans_scaler = pickle.load(open('kmeans_scaler.pkl', 'rb'))
 nb_scaler = pickle.load(open('nb_scaler.pkl', 'rb'))
+cm_dict = pickle.load(open('cm_data.pkl', 'rb')) # Load confusion matrix data
 
 # Set Page Config
 st.set_page_config(page_title="Wine Customer Analytics & Predictor", page_icon="🍷", layout="wide")
@@ -226,7 +228,7 @@ elif menu == "Eksplorasi Data & Visualisasi":
                 initial_cols,
                 initial_duplicates_count,
                 rows_after_duplicates_drop,
-                rows_after_initial_drop,
+                initial_rows - missing_before_count, # Corrected: Calculate rows after all initial drops based on notebook logic
                 missing_before_count,
                 missing_after_initial_count
             ]
@@ -266,6 +268,7 @@ elif menu == "Eksplorasi Data & Visualisasi":
     with tab_cluster:
         st.subheader("Metrik Evaluasi Klaster K-Means")
 
+        # Inertias and Silhouette Scores are still calculated for informational purposes, but only Elbow plot will be shown
         inertias_eval = []
         sil_scores_eval = []
         ks = range(2, 11)
@@ -281,20 +284,23 @@ elif menu == "Eksplorasi Data & Visualisasi":
         st.markdown(f"💡 **Nilai K Terbaik Secara Matematis (Silhouette Score):** `k = {best_k_silhouette}`")
         st.info("Meskipun Silhouette Score tertinggi berada pada K tertentu, nilai K=2 dipertahankan dalam analisis segmentasi akhir demi kedalaman akomodasi interpretasi profil bisnis ritel.")
 
-        # Plot Metode Elbow & Silhouette secara Berdampingan
-        fig_eval, (ax_el, ax_sil) = plt.subplots(1, 2, figsize=(14, 5))
-        ax_el.plot(ks, inertias_eval, marker='o', color='royalblue')
-        ax_el.set_title('Elbow Method for Optimal K (Inertia)')
-        ax_el.set_xlabel('Number of Clusters (K)')
-        ax_el.set_ylabel('Inertia')
-        ax_el.grid(True)
+        # --- Plot Metode Elbow (hanya satu plot) ---
+        fig_el, ax_el = plt.subplots(1, 1, figsize=(8, 5)) # Create a single subplot
 
-        ax_sil.plot(ks, sil_scores_eval, marker='s', color='crimson')
-        ax_sil.set_title('Silhouette Score for Optimal K')
-        ax_sil.set_xlabel('Number of Clusters (K)')
-        ax_sil.set_ylabel('Silhouette Score')
-        ax_sil.grid(True)
-        st.pyplot(fig_eval)
+        # Elbow Method using Yellowbrick (like Colab notebook)
+        model_for_elbow = KMeans(n_init=10, random_state=42)
+        visualizer_elbow = KElbowVisualizer(model_for_elbow, k=(1, 10), timings=True, locate_elbow=False, random_state=42, ax=ax_el)
+        visualizer_elbow.fit(k_inputs_eval)
+        # Add the vertical line and legend for k=4, similar to Colab notebook
+        # k_scores_ are the inertia values, k=4 is at index 3 (for k=1 to 10)
+        k4_score = visualizer_elbow.k_scores_[3]
+        ax_el.axvline(x=4, color='black', linestyle='--', linewidth=2,
+                      label=f'elbow at k = 4, score = {k4_score:.3f}')
+        ax_el.legend(loc='upper right')
+        ax_el.set_title('Distortion Score Elbow for KMeans Clustering')
+
+        # Display the single Elbow plot
+        st.pyplot(fig_el)
 
         st.divider()
         st.subheader("Visualisasi Sebaran Spasial Klaster (K=4)")
@@ -343,18 +349,34 @@ elif menu == "Eksplorasi Data & Visualisasi":
         st.pyplot(fig_box_seg)
 
         st.divider()
-        st.subheader("Deteksi Batas Outliers Awal (Boxplot)")
-        fig_outliers, axes = plt.subplots(2, 2, figsize=(14, 8))
-        sns.boxplot(y=df_clean['Income'], ax=axes[0, 0], color='skyblue')
-        axes[0, 0].set_title('Income Outliers Status')
-        sns.boxplot(y=df_clean['Age'], ax=axes[0, 1], color='lightgreen')
-        axes[0, 1].set_title('Age Outliers Status')
-        sns.boxplot(y=df_clean['Wine_Spend'], ax=axes[1, 0], color='coral')
-        axes[1, 0].set_title('Wine Spend Outliers Status')
-        sns.boxplot(y=df_clean['AmtTotal'], ax=axes[1, 1], color='gold')
-        axes[1, 1].set_title('Total Amount Outliers Status')
+
+        # Before Outlier Capping Boxplots (using df_processed for original data)
+        st.subheader("Deteksi Batas Outliers (Sebelum Capping)")
+        fig_outliers_before, axes_before = plt.subplots(2, 2, figsize=(14, 8))
+        sns.boxplot(y=df_processed['Income'], ax=axes_before[0, 0], color='skyblue')
+        axes_before[0, 0].set_title('Income Outliers Status')
+        sns.boxplot(y=df_processed['Age'], ax=axes_before[0, 1], color='lightgreen')
+        axes_before[0, 1].set_title('Age Outliers Status')
+        sns.boxplot(y=df_processed['Wine_Spend'], ax=axes_before[1, 0], color='coral')
+        axes_before[1, 0].set_title('Wine Spend Outliers Status')
+        sns.boxplot(y=df_processed['AmtTotal'], ax=axes_before[1, 1], color='gold')
+        axes_before[1, 1].set_title('Total Amount Outliers Status')
         plt.tight_layout()
-        st.pyplot(fig_outliers)
+        st.pyplot(fig_outliers_before)
+
+        # After Outlier Capping Boxplots (using df_clean)
+        st.subheader("Deteksi Batas Outliers (Sesudah Capping)")
+        fig_outliers_after, axes_after = plt.subplots(2, 2, figsize=(14, 8))
+        sns.boxplot(y=df_clean['Income'], ax=axes_after[0, 0], color='skyblue')
+        axes_after[0, 0].set_title('Income Outliers Status (Capped)')
+        sns.boxplot(y=df_clean['Age'], ax=axes_after[0, 1], color='lightgreen')
+        axes_after[0, 1].set_title('Age Outliers Status (Capped)')
+        sns.boxplot(y=df_clean['Wine_Spend'], ax=axes_after[1, 0], color='coral')
+        axes_after[1, 0].set_title('Wine Spend Outliers Status (Capped)')
+        sns.boxplot(y=df_clean['AmtTotal'], ax=axes_after[1, 1], color='gold')
+        axes_after[1, 1].set_title('Total Amount Outliers Status (Capped)')
+        plt.tight_layout()
+        st.pyplot(fig_outliers_after)
 
         st.subheader("Distribusi Geometris Fitur Numerik Utama (Histogram)")
         fig_hist, axes_hist = plt.subplots(2, 3, figsize=(15, 8))
@@ -362,6 +384,28 @@ elif menu == "Eksplorasi Data & Visualisasi":
         fig_hist.suptitle('Distributions of Key Numerical Features', fontsize=14)
         plt.tight_layout()
         st.pyplot(fig_hist)
+
+        st.divider()
+
+        # Confusion Matrix plots (using cm_dict)
+        st.subheader("Evaluasi Confusion Matrix (Random Forest)")
+        st.write("Perbandingan Confusion Matrix sebelum dan sesudah penerapan SMOTE untuk mengatasi imbalance data.")
+
+        col_cm1, col_cm2 = st.columns(2)
+
+        with col_cm1:
+            st.markdown("##### Confusion Matrix (Before SMOTE)")
+            fig_cm_before, ax_cm_before = plt.subplots(figsize=(6, 5))
+            ConfusionMatrixDisplay(cm_dict['before'], display_labels=list(segments.values())).plot(ax=ax_cm_before, cmap='Blues', xticks_rotation=45)
+            ax_cm_before.set_title('Before SMOTE')
+            st.pyplot(fig_cm_before)
+
+        with col_cm2:
+            st.markdown("##### Confusion Matrix (After SMOTE)")
+            fig_cm_after, ax_cm_after = plt.subplots(figsize=(6, 5))
+            ConfusionMatrixDisplay(cm_dict['after'], display_labels=list(segments.values())).plot(ax=ax_cm_after, cmap='Greens', xticks_rotation=45)
+            ax_cm_after.set_title('After SMOTE')
+            st.pyplot(fig_cm_after)
 
 # --- FOOTER IDENTITAS ---
 st.markdown("---")
