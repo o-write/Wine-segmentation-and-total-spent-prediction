@@ -285,22 +285,7 @@ elif menu == "Eksplorasi Data & Visualisasi":
         st.info("Meskipun Silhouette Score tertinggi berada pada K tertentu, nilai K=4 dipertahankan dalam analisis segmentasi akhir demi kedalaman akomodasi interpretasi profil bisnis ritel.")
 
         # --- Plot Metode Elbow (hanya satu plot) ---
-        fig_el, ax_el = plt.subplots(1, 1, figsize=(8, 5)) # Create a single subplot
-
-        # Elbow Method using Yellowbrick (like Colab notebook)
-        model_for_elbow = KMeans(n_init=10, random_state=42)
-        visualizer_elbow = KElbowVisualizer(model_for_elbow, k=(1, 10), timings=True, locate_elbow=False, random_state=42, ax=ax_el)
-        visualizer_elbow.fit(k_inputs_eval)
-        # Add the vertical line and legend for k=4, similar to Colab notebook
-        # k_scores_ are the inertia values, k=4 is at index 3 (for k=1 to 10)
-        k4_score = visualizer_elbow.k_scores_[3]
-        ax_el.axvline(x=4, color='black', linestyle='--', linewidth=2,
-                      label=f'elbow at k = 4, score = {k4_score:.3f}')
-        ax_el.legend(loc='upper right')
-        ax_el.set_title('Distortion Score Elbow for KMeans Clustering')
-
-        # Display the single Elbow plot
-        st.pyplot(fig_el)
+        st.image('elbow_plot.png', caption='Distortion Score Elbow for KMeans Clustering')
 
         st.divider()
         st.subheader("Visualisasi Sebaran Spasial Klaster (K=4)")
